@@ -35,31 +35,15 @@ static void MIX_AREAS_16(unsigned int size,
 			 volatile signed int *sum, size_t dst_step,
 			 size_t src_step, size_t sum_step)
 {
-	unsigned long long old_rbx;
+	int eax, ecx, edx;
 
-	/*
-	 *  RSI - src
-	 *  RDI - dst
-	 *  RBX - sum
-	 *  ECX - old sample
-	 *  EAX - sample / temporary
-	 *  EDX - temporary
-	 */
 	__asm__ __volatile__ (
 		"\n"
-
-		"\tmovq %%rbx, %7\n"
-		/*
-		 *  initialization, load RSI, RDI, RBX registers
-		 */
-		"\tmovq %1, %%rdi\n"
-		"\tmovq %2, %%rsi\n"
-		"\tmovq %3, %%rbx\n"
 
 		/*
 		 * while (size-- > 0) {
 		 */
-		"\tcmpl $0, %0\n"
+		"\ttestl %[size], %[size]\n"
 		"jz 6f\n"
 
 		"\t.p2align 4,,15\n"
@@ -73,15 +57,15 @@ static void MIX_AREAS_16(unsigned int size,
 		 *     sample -= sum_sample;
 		 *   xadd(*sum, sample);
 		 */
-		"\tmovw $0, %%ax\n"
-		"\tmovw $1, %%cx\n"
-		"\tmovl (%%rbx), %%edx\n"
-		"\t" LOCK_PREFIX "cmpxchgw %%cx, (%%rdi)\n"
-		"\tmovswl (%%rsi), %%ecx\n"
+		"\txorl %[eax], %[eax]\n"
+		"\tmovl $1, %[ecx]\n"
+		"\tmovl (%q[sum]), %[edx]\n"
+		"\t" LOCK_PREFIX "cmpxchgw %w[ecx], (%q[dst])\n"
+		"\tmovswl (%q[src]), %[ecx]\n"
 		"\tjnz 2f\n"
-		"\t" XSUB " %%edx, %%ecx\n"
+		"\t" XSUB " %[edx], %[ecx]\n"
 		"2:"
-		"\t" LOCK_PREFIX XADD " %%ecx, (%%rbx)\n"
+		"\t" LOCK_PREFIX XADD " %[ecx], (%q[sum])\n"
 
 		/*
 		 *   do {
@@ -92,33 +76,30 @@ static void MIX_AREAS_16(unsigned int size,
 		 */
 
 		"3:"
-		"\tmovl (%%rbx), %%ecx\n"
-		"\tmovd %%ecx, %%mm0\n"
-		"\tpackssdw %%mm1, %%mm0\n"
-		"\tmovd %%mm0, %%eax\n"
-		"\tmovw %%ax, (%%rdi)\n"
-		"\tcmpl %%ecx, (%%rbx)\n"
+		"\tmovl (%q[sum]), %[ecx]\n"
+		"\tmovd %[ecx], %%mm0\n"
+		"\tpackssdw %%mm0, %%mm0\n"
+		"\tmovd %%mm0, %[eax]\n"
+		"\tmovw %w[eax], (%q[dst])\n"
+		"\tcmpl %[ecx], (%q[sum])\n"
 		"\tjnz 3b\n"
 
 		/*
 		 * while (size-- > 0)
 		 */
-		"\tadd %4, %%rdi\n"
-		"\tadd %5, %%rsi\n"
-		"\tadd %6, %%rbx\n"
-		"\tdecl %0\n"
+		"\tadd %[dst_step], %[dst]\n"
+		"\tadd %[src_step], %[src]\n"
+		"\tadd %[sum_step], %[sum]\n"
+		"\tdecl %[size]\n"
 		"\tjnz 1b\n"
 
 		"6:"
 		
 		"\temms\n"
-		"\tmovq %7, %%rbx\n"
 
-		: /* no output regs */
-		: "m" (size), "m" (dst), "m" (src),
-		  "m" (sum), "m" (dst_step), "m" (src_step),
-		  "m" (sum_step), "m" (old_rbx)
-		: "rsi", "rdi", "edx", "ecx", "eax"
+		: [eax] "=&a" (eax), [ecx] "=&c" (ecx), [edx] "=&d" (edx)
+		: [dst] "r" (dst), [src] "r" (src), [sum] "r" (sum), [size] "r" (size),
+		  [dst_step] "r" (dst_step), [src_step] "r" (src_step), [sum_step] "r" (sum_step)
 	);
 }
 
@@ -130,31 +111,15 @@ static void MIX_AREAS_32(unsigned int size,
 			 volatile signed int *sum, size_t dst_step,
 			 size_t src_step, size_t sum_step)
 {
-	unsigned long long old_rbx;
+	int eax, ecx, edx;
 
-	/*
-	 *  RSI - src
-	 *  RDI - dst
-	 *  RBX - sum
-	 *  ECX - old sample
-	 *  EAX - sample / temporary
-	 *  EDX - temporary
-	 */
 	__asm__ __volatile__ (
 		"\n"
-
-		"\tmovq %%rbx, %7\n"
-		/*
-		 *  initialization, load ESI, EDI, EBX registers
-		 */
-		"\tmovq %1, %%rdi\n"
-		"\tmovq %2, %%rsi\n"
-		"\tmovq %3, %%rbx\n"
 
 		/*
 		 * while (size-- > 0) {
 		 */
-		"\tcmpl $0, %0\n"
+		"\ttestl %[size], %[size]\n"
 		"jz 6f\n"
 
 		"\t.p2align 4,,15\n"
@@ -168,22 +133,22 @@ static void MIX_AREAS_32(unsigned int size,
 		 *     sample -= sum_sample;
 		 *   xadd(*sum, sample);
 		 */
-		"\tmovl $0, %%eax\n"
-		"\tmovl $1, %%ecx\n"
-		"\tmovl (%%rbx), %%edx\n"
-		"\t" LOCK_PREFIX "cmpxchgl %%ecx, (%%rdi)\n"
+		"\txorl %[eax], %[eax]\n"
+		"\tmovl $1, %[ecx]\n"
+		"\tmovl (%q[sum]), %[edx]\n"
+		"\t" LOCK_PREFIX "cmpxchgl %[ecx], (%q[dst])\n"
 		"\tjnz 2f\n"
-		"\tmovl (%%rsi), %%ecx\n"
+		"\tmovl (%q[src]), %[ecx]\n"
 		/* sample >>= 8 */
-		"\tsarl $8, %%ecx\n"
-		"\t" XSUB " %%edx, %%ecx\n"
+		"\tsarl $8, %[ecx]\n"
+		"\t" XSUB " %[edx], %[ecx]\n"
 		"\tjmp 21f\n"
 		"2:"
-		"\tmovl (%%rsi), %%ecx\n"
+		"\tmovl (%q[src]), %[ecx]\n"
 		/* sample >>= 8 */
-		"\tsarl $8, %%ecx\n"
+		"\tsarl $8, %[ecx]\n"
 		"21:"
-		"\t" LOCK_PREFIX XADD " %%ecx, (%%rbx)\n"
+		"\t" LOCK_PREFIX XADD " %[ecx], (%q[sum])\n"
 
 		/*
 		 *   do {
@@ -194,46 +159,43 @@ static void MIX_AREAS_32(unsigned int size,
 		 */
 
 		"3:"
-		"\tmovl (%%rbx), %%ecx\n"
+		"\tmovl (%q[sum]), %[ecx]\n"
 		/*
 		 *  if (sample > 0x7fff00)
 		 */
-		"\tmovl $0x7fffff, %%eax\n"
-		"\tcmpl %%eax, %%ecx\n"
+		"\tmovl $0x7fffff, %[eax]\n"
+		"\tcmpl %[eax], %[ecx]\n"
 		"\tjg 4f\n"
 		/*
 		 *  if (sample < -0x800000)
 		 */
-		"\tmovl $-0x800000, %%eax\n"
-		"\tcmpl %%eax, %%ecx\n"
+		"\tmovl $-0x800000, %[eax]\n"
+		"\tcmpl %[eax], %[ecx]\n"
 		"\tjl 4f\n"
-		"\tmovl %%ecx, %%eax\n"
+		"\tmovl %[ecx], %[eax]\n"
 		"4:"
 		/*
 		 *  sample <<= 8;
 		 */
-		"\tsall $8, %%eax\n"
-		"\tmovl %%eax, (%%rdi)\n"
-		"\tcmpl %%ecx, (%%rbx)\n"
+		"\tsall $8, %[eax]\n"
+		"\tmovl %[eax], (%q[dst])\n"
+		"\tcmpl %[ecx], (%q[sum])\n"
 		"\tjnz 3b\n"
 
 		/*
 		 * while (size-- > 0)
 		 */
-		"\tadd %4, %%rdi\n"
-		"\tadd %5, %%rsi\n"
-		"\tadd %6, %%rbx\n"
-		"\tdecl %0\n"
+		"\tadd %[dst_step], %[dst]\n"
+		"\tadd %[src_step], %[src]\n"
+		"\tadd %[sum_step], %[sum]\n"
+		"\tdecl %[size]\n"
 		"\tjnz 1b\n"
 		
 		"6:"
-		"\tmovq %7, %%rbx\n"
 
-		: /* no output regs */
-		: "m" (size), "m" (dst), "m" (src),
-		  "m" (sum), "m" (dst_step), "m" (src_step),
-		  "m" (sum_step), "m" (old_rbx)
-		: "rsi", "rdi", "edx", "ecx", "eax"
+		: [eax] "=&a" (eax), [ecx] "=&c" (ecx), [edx] "=&d" (edx)
+		: [dst] "r" (dst), [src] "r" (src), [sum] "r" (sum), [size] "r" (size),
+		  [dst_step] "r" (dst_step), [src_step] "r" (src_step), [sum_step] "r" (sum_step)
 	);
 }
 
@@ -245,31 +207,15 @@ static void MIX_AREAS_24(unsigned int size,
 			 volatile signed int *sum, size_t dst_step,
 			 size_t src_step, size_t sum_step)
 {
-	unsigned long long old_rbx;
+	int eax, ecx, edx;
 
-	/*
-	 *  RSI - src
-	 *  RDI - dst
-	 *  RBX - sum
-	 *  ECX - old sample
-	 *  EAX - sample / temporary
-	 *  EDX - temporary
-	 */
 	__asm__ __volatile__ (
 		"\n"
-
-		"\tmovq %%rbx, %7\n"
-		/*
-		 *  initialization, load ESI, EDI, EBX registers
-		 */
-		"\tmovq %1, %%rdi\n"
-		"\tmovq %2, %%rsi\n"
-		"\tmovq %3, %%rbx\n"
 
 		/*
 		 * while (size-- > 0) {
 		 */
-		"\tcmpl $0, %0\n"
+		"\ttestl %[size], %[size]\n"
 		"jz 6f\n"
 
 		"\t.p2align 4,,15\n"
@@ -283,16 +229,16 @@ static void MIX_AREAS_24(unsigned int size,
 		 *     sample -= sum_sample;
 		 *   *sum += sample;
 		 */
-		"\tmovsbl 2(%%rsi), %%eax\n"
-		"\tmovzwl (%%rsi), %%ecx\n"
-		"\tmovl (%%rbx), %%edx\n"
-		"\tsall $16, %%eax\n"
-		"\torl %%eax, %%ecx\n"
-		"\t" LOCK_PREFIX "btsw $0, (%%rdi)\n"
+		"\tmovsbl 2(%q[src]), %[eax]\n"
+		"\tmovzwl (%q[src]), %[ecx]\n"
+		"\tmovl (%q[sum]), %[edx]\n"
+		"\tsall $16, %[eax]\n"
+		"\torl %[eax], %[ecx]\n"
+		"\t" LOCK_PREFIX "btsw $0, (%q[dst])\n"
 		"\tjc 2f\n"
-		"\t" XSUB " %%edx, %%ecx\n"
+		"\t" XSUB " %[edx], %[ecx]\n"
 		"2:"
-		"\t" LOCK_PREFIX XADD " %%ecx, (%%rbx)\n"
+		"\t" LOCK_PREFIX XADD " %[ecx], (%q[sum])\n"
 
 		/*
 		 *   do {
@@ -303,39 +249,36 @@ static void MIX_AREAS_24(unsigned int size,
 		 */
 
 		"3:"
-		"\tmovl (%%rbx), %%ecx\n"
+		"\tmovl (%q[sum]), %[ecx]\n"
 
-		"\tmovl $0x7fffff, %%eax\n"
-		"\tmovl $-0x7fffff, %%edx\n"
-		"\tcmpl %%eax, %%ecx\n"
-		"\tcmovng %%ecx, %%eax\n"
-		"\tcmpl %%edx, %%ecx\n"
-		"\tcmovl %%edx, %%eax\n"
+		"\tmovl $0x7fffff, %[eax]\n"
+		"\tmovl $-0x7fffff, %[edx]\n"
+		"\tcmpl %[eax], %[ecx]\n"
+		"\tcmovng %[ecx], %[eax]\n"
+		"\tcmpl %[edx], %[ecx]\n"
+		"\tcmovl %[edx], %[eax]\n"
 
-		"\torl $1, %%eax\n"
-		"\tmovw %%ax, (%%rdi)\n"
-		"\tshrl $16, %%eax\n"
-		"\tmovb %%al, 2(%%rdi)\n"
+		"\torl $1, %[eax]\n"
+		"\tmovw %w[eax], (%q[dst])\n"
+		"\tshrl $16, %[eax]\n"
+		"\tmovb %b[eax], 2(%q[dst])\n"
 	
-		"\tcmpl %%ecx, (%%rbx)\n"
+		"\tcmpl %[ecx], (%q[sum])\n"
 		"\tjnz 3b\n"
 
 		/*
 		 * while (size-- > 0)
 		 */
-		"\tadd %4, %%rdi\n"
-		"\tadd %5, %%rsi\n"
-		"\tadd %6, %%rbx\n"
-		"\tdecl %0\n"
+		"\tadd %[dst_step], %[dst]\n"
+		"\tadd %[src_step], %[src]\n"
+		"\tadd %[sum_step], %[sum]\n"
+		"\tdecl %[size]\n"
 		"\tjnz 1b\n"
 		
 		"6:"
-		"\tmovq %7, %%rbx\n"
 
-		: /* no output regs */
-		: "m" (size), "m" (dst), "m" (src),
-		  "m" (sum), "m" (dst_step), "m" (src_step),
-		  "m" (sum_step), "m" (old_rbx)
-		: "rsi", "rdi", "edx", "ecx", "eax"
+		: [eax] "=&a" (eax), [ecx] "=&c" (ecx), [edx] "=&d" (edx)
+		: [dst] "r" (dst), [src] "r" (src), [sum] "r" (sum), [size] "r" (size),
+		  [dst_step] "r" (dst_step), [src_step] "r" (src_step), [sum_step] "r" (sum_step)
 	);
 }
